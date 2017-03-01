@@ -96,19 +96,34 @@ function validationErrorMessage(error) {
   }
 }
 
+function isNotNotesError(error) {
+  return !(error.keyword == 'additionalProperties' &&
+    error.params.additionalProperty == 'notes');
+}
+
 Promise.all(validatorPromises).then(()=>{
   const validationPromises = [];
   function validateFile(filename, type) {
     const validator = validators[type];
     return fs.readFile(filename, 'utf8')
-      .then(yamlContent => yaml.load(yamlContent, {schema: yaml.JSON_SCHEMA}))
-      .then(objectContent => {
+      .then(yamlContent => {
+        let objectContent;
+        try {
+          objectContent = yaml.load(yamlContent, {schema: yaml.JSON_SCHEMA});
+        } catch (yamlError) {
+          return {filename, valid: false,
+            yamlError: yamlError.toString()};
+        }
         const valid = validator(objectContent);
         if (valid) {
           return {filename, valid};
         } else {
-          return {filename, valid,
-            errors: validator.errors};
+          const schemaErrors = validator.errors.filter(isNotNotesError);
+          if (schemaErrors.length > 0) {
+            return {filename, valid, schemaErrors};
+          } else {
+            return {filename, valid: true};
+          }
         }
       });
   }
