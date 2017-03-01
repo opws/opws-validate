@@ -138,13 +138,16 @@ Promise.all(validatorPromises).then(()=>{
   const failedValidations = validations.filter(x => !x.valid);
   if (failedValidations.length > 0) {
     console.log(
-      chalk.red(`${failedValidations.length} failed validation\n`));
+      chalk.red(`${failedValidations.length} failed validation`));
     for (let failure of failedValidations) {
-      console.log(`${failure.filename}:`);
-      for (let error of failure.errors) {
-        console.log(`- ${validationErrorMessage(error)}`);
+      console.log(`\n${failure.filename}:`);
+      if (failure.yamlError) {
+        console.log(`${failure.yamlError}\n`);
+      } else if (failure.schemaErrors) {
+        for (let error of failure.schemaErrors) {
+          console.log(`- ${validationErrorMessage(error)}`);
+        }
       }
-      console.log();
     }
   } else {
     console.log(chalk.green('All validations passed'));
