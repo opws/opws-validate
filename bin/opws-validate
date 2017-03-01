@@ -1,0 +1,142 @@
+#! /usr/bin/env node
+"use strict";
+
+const yaml = require('js-yaml');
+const Ajv = require('ajv');
+const ajv = new Ajv({allErrors: true});
+const jbans = require('jbans');
+const fs = require('mz/fs');
+const chalk = require('chalk');
+const path = require('path');
+
+const opwsSchemataRoot = process.env.OPWS_SCHEMATA_ROOT ||
+  path.resolve(__dirname, '../../opws-schemata');
+
+const toTest = {
+  profiles: [],
+  legacies: []
+};
+let schemaVersion = 'draft/v0.1';
+let schemaPath;
+let explicitType = null;
+let sniff = true;
+let tight = true;
+for (let i = 2; i < process.argv.length; ++i) {
+  let arg = process.argv[i];
+  if (arg.slice(0, 2) == '--') {
+    if (arg == '--profiles') {
+      explicitType = 'profiles';
+    } else if (arg == '--legacies') {
+      explicitType = 'legacies';
+    } else if (arg == '--sniff') {
+      explicitType = null;
+      sniff = true;
+    } else if (arg == '--nosniff') {
+      sniff = false;
+    } else if (arg == '--loose') {
+      if (toTest.profiles.length || toTest.legacies.length) {
+        console.error('--loose must be specified before any files');
+        process.exit(1);
+      } else {
+        tight = false;
+      }
+    } else {
+      console.error(`Unrecognized option ${arg}`);
+      process.exit(1);
+    }
+  } else {
+    if (path.sep == '\\') arg.replace(/\\/g,'/');
+    if (explicitType) {
+      toTest[explicitType].push(arg);
+    } else if (sniff) {
+      if (/profiles\/*[^/]+$/.test(arg)) {
+        toTest.profiles.push(arg);
+      } else if (/legacies\/*[^/]+$/.test(arg)) {
+        toTest.legacies.push(arg);
+      } else if (sniff) {
+        console.warn(`Assuming ${arg} is the name of a profile`);
+        toTest.profiles.push(arg);
+      }
+    } else {
+      console.error(`No mode specified for ${arg} and sniff is disabled`);
+      process.exit(1);
+    }
+  }
+}
+
+schemaPath = schemaPath || path.join(opwsSchemataRoot, schemaVersion);
+
+const validators = {};
+const validatorPromises = [];
+
+function initValidator(type) {
+  if (toTest[type].length) {
+    validatorPromises.push(
+      fs.readFile(path.join(schemaPath,type + '.json'), 'utf8')
+      .then(jsonSchema => {
+        const schema = JSON.parse(jsonSchema);
+        validators[type] = ajv.compile(
+          tight ? jbans(schema) : schema);
+      }));
+  }
+}
+
+initValidator('profiles');
+initValidator('legacies');
+
+function validationErrorMessage(error) {
+  if (error.keyword == 'additionalProperties') {
+    const aProp = error.params.additionalProperty;
+    const suffix = /[a-zA-Z_$][a-zA-Z0-9_$]*/.test(aProp)
+      ? (error.dataPath == '' ? `${aProp}` : `.${aProp}`)
+      : `[${JSON.stringify(aProp)}]`;
+    return `${error.dataPath.replace(/^\./,'')}${suffix} is not a thing`;
+  } else {
+    return `${error.dataPath.replace(/^\./,'')} ${error.message}`;
+  }
+}
+
+Promise.all(validatorPromises).then(()=>{
+  const validationPromises = [];
+  function validateFile(filename, type) {
+    const validator = validators[type];
+    return fs.readFile(filename, 'utf8')
+      .then(yamlContent => yaml.load(yamlContent, {schema: yaml.JSON_SCHEMA}))
+      .then(objectContent => {
+        const valid = validator(objectContent);
+        if (valid) {
+          return {filename, valid};
+        } else {
+          return {filename, valid,
+            errors: validator.errors};
+        }
+      });
+  }
+  for (let profileFilename of toTest.profiles) {
+    validationPromises.push(validateFile(profileFilename, 'profiles'));
+  }
+  for (let legacyFilename of toTest.legacies) {
+    validationPromises.push(validateFile(legacyFilename, 'legacies'));
+  }
+  return Promise.all(validationPromises);
+}).then(validations => {
+  const failedValidations = validations.filter(x => !x.valid);
+  if (failedValidations.length > 0) {
+    console.log(
+      chalk.red(`${failedValidations.length} failed validation\n`));
+    for (let failure of failedValidations) {
+      console.log(`${failure.filename}:`);
+      for (let error of failure.errors) {
+        console.log(`- ${validationErrorMessage(error)}`);
+      }
+      console.log();
+    }
+  } else {
+    console.log(chalk.green('All validations passed'));
+    process.exit(0);
+  }
+}).catch(err => {
+  console.error('Uncaught promise error:');
+  console.error(err);
+  process.exit(1);
+});
