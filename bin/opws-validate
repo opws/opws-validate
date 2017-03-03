@@ -16,11 +16,12 @@ const toTest = {
   profiles: [],
   legacies: []
 };
-let schemaVersion = 'draft/v0.1';
+let schemaVersion = process.env.OPWS_SCHEMA_VERSION || 'draft/v0.1';
 let schemaPath;
 let explicitType = null;
 let sniff = true;
 let tight = true;
+
 for (let i = 2; i < process.argv.length; ++i) {
   let arg = process.argv[i];
   if (arg.slice(0, 2) == '--') {
