@@ -16,7 +16,7 @@ const toTest = {
   profiles: [],
   legacies: []
 };
-let schemaVersion = process.env.OPWS_SCHEMA_VERSION || 'draft/v0.1';
+let schemaVersion = process.env.OPWS_SCHEMA_VERSION || 'v0.1';
 let schemaPath;
 let explicitType = null;
 let sniff = true;
