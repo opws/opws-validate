@@ -143,6 +143,7 @@ Promise.all(validatorPromises).then(()=>{
         }
       }
     }
+    process.exit(1);
   } else {
     console.log(chalk.green('All validations passed'));
     process.exit(0);
