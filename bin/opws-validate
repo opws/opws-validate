@@ -16,7 +16,7 @@ const toTest = {
   profiles: [],
   legacies: []
 };
-let schemaVersion = process.env.OPWS_SCHEMA_VERSION || 'v0.1';
+let schemaVersion = process.env.OPWS_SCHEMA_VERSION || 'v0.2';
 let schemaPath;
 let explicitType = null;
 let sniff = true;
@@ -70,6 +70,9 @@ schemaPath = schemaPath || path.join(opwsSchemataRoot, schemaVersion);
 const validators = {};
 const validatorPromises = [];
 
+// for validating against v0.1
+ajv.addMetaSchema(require('ajv/lib/refs/json-schema-draft-04.json'));
+
 function initValidator(type) {
   if (toTest[type].length) {
     validatorPromises.push(
@@ -97,11 +100,6 @@ function validationErrorMessage(error) {
   }
 }
 
-function isNotNotesError(error) {
-  return !(error.keyword == 'additionalProperties' &&
-    error.params.additionalProperty == 'notes');
-}
-
 Promise.all(validatorPromises).then(()=>{
   const validationPromises = [];
   function validateFile(filename, type) {
@@ -119,12 +117,7 @@ Promise.all(validatorPromises).then(()=>{
         if (valid) {
           return {filename, valid};
         } else {
-          const schemaErrors = validator.errors.filter(isNotNotesError);
-          if (schemaErrors.length > 0) {
-            return {filename, valid, schemaErrors};
-          } else {
-            return {filename, valid: true};
-          }
+          return {filename, valid, schemaErrors: validator.errors};
         }
       });
   }
